@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billiard Table Manager</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans">
+    
+    <div id="app" v-cloak class="min-h-screen pb-10">
+        <header class="bg-gray-900 text-white p-4 shadow-md sticky top-0 z-10" data-html2canvas-ignore>
+            <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+                <h1 class="text-2xl font-bold flex items-center gap-2">🎱 Yujin Billiard Hall Manager</h1>
+                <div class="flex flex-wrap gap-2 bg-gray-800 p-1 rounded-lg">
+                    <button @click="activeTab = 'dashboard'" :class="['px-4 py-2 rounded-md font-medium transition', activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white hover:bg-gray-700']">
+                        Tables Dashboard
+                    </button>
+                    <button @click="activeTab = 'walkin'" :class="['px-4 py-2 rounded-md font-medium transition', activeTab === 'walkin' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white hover:bg-gray-700']">
+                        Walk-in Customers
+                    </button>
+                    <button @click="activeTab = 'settings'" :class="['px-4 py-2 rounded-md font-medium transition', activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white hover:bg-gray-700']">
+                        Settings & Inventory
+                    </button>
+                    <button @click="activeTab = 'tocollect'" :class="['px-4 py-2 rounded-md font-medium transition', activeTab === 'tocollect' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white hover:bg-gray-700']">
+                        Pending Payments
+                    </button>
+                    <button @click="activeTab = 'reports'" :class="['px-4 py-2 rounded-md font-medium transition', activeTab === 'reports' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white hover:bg-gray-700']">
+                        Reports & Sales
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-7xl mx-auto mt-6">
+            
+            <div v-if="activeTab === 'dashboard'" class="p-6 space-y-4">
+                <div class="flex justify-end gap-2" data-html2canvas-ignore>
+                    <button @click="addNewTable" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold text-sm shadow transition">
+                        ➕ Add New Table
+                    </button>
+                </div>
+                
+                <div class="flex flex-col lg:flex-row gap-6 items-start">
+                    <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div v-for="table in tables" :key="table.id" :class="['rounded-xl shadow-lg p-5 flex flex-col justify-between border-t-4 relative group', table.status === 'available' ? 'bg-white border-green-500' : (table.isAdminMode ? 'bg-purple-50 border-purple-600' : 'bg-blue-50 border-blue-600')]">
+                            
+                            <button v-if="table.status === 'available'" @click="deleteTable(table.id)" class="absolute top-2 right-2 text-gray-300 hover:text-red-500 text-lg transition font-bold" title="Delete Table" data-html2canvas-ignore>
+                                &times;
+                            </button>
+
+                            <div>
+                                <div class="flex justify-between items-center mb-2">
+                                    <input type="text" v-model="table.name" @change="saveSilent" class="font-bold text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:bg-white px-1 py-0.5 rounded outline-none w-28 transition" title="Click to rename label" />
+                                    <span :class="['text-xs px-2 py-1 rounded-full font-semibold', table.status === 'available' ? 'bg-green-100 text-green-700' : (table.isAdminMode ? 'bg-purple-100 text-purple-700' : (table.isPaused ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'))]">
+                                        {{ table.isAdminMode ? 'ADMIN MODE' : (table.isPaused ? 'PAUSED' : table.status.toUpperCase()) }}
+                                    </span>
+                                </div>
+                                
+                                <div v-if="table.status === 'occupied'" class="mt-4">
+                                    <p class="text-sm text-gray-600">Customer: <span class="font-semibold text-gray-900">{{ table.customerName }}</span></p>
+                                    
+                                    <div v-if="!table.isAdminMode">
+                                        <div class="text-3xl font-mono text-center my-4 font-bold" :class="table.isPaused ? 'text-amber-600' : 'text-blue-700'">
+                                            {{ formatTime(table.elapsedSeconds) }}
+                                        </div>
+                                        <p class="text-center text-sm text-gray-600">Time Cost: <span class="font-semibold" :class="{'line-through text-gray-400': table.isVoided}">{{ formatCurrency(calculateTimeCost(table.elapsedSeconds, table.isVoided)) }}</span> <span v-if="table.isVoided" class="text-xs text-red-600 font-bold ml-1">VOIDED</span></p>
+                                        <p class="text-center text-xs text-gray-500 mt-1">(Min 30 mins, updates on the full minute mark)</p>
+                                    </div>
+                                    <div v-else class="mt-3 bg-purple-100 p-3 rounded border border-purple-200 text-center">
+                                        <p class="text-xs text-purple-800 font-bold uppercase tracking-wider">Custom Table Cost</p>
+                                        <div class="mt-1">
+                                            <span class="text-xs text-gray-500 font-sans mr-1">₱</span>
+                                            <input type="number" min="0" step="0.01" v-model.number="table.adminCustomCost" class="border rounded p-1 text-center w-28 text-lg font-mono font-bold text-purple-700 bg-white" @change="saveSilent" />
+                                        </div>
+                                        <div v-if="table.adminNotes" class="mt-2 text-xs text-gray-600 italic border-t pt-1 border-purple-200 truncate" :title="table.adminNotes">
+                                            Note: {{ table.adminNotes }}
+                                        </div>
+                                    </div>
+
+                                    <div v-if="table.importantNotes" class="mt-3 text-xs bg-yellow-50 text-yellow-800 p-2 border border-yellow-200 rounded truncate" :title="table.importantNotes">
+                                        📝 <strong>Note:</strong> {{ table.importantNotes }}
+                                    </div>
+                                </div>
+                                
+                                <div v-else class="mt-4 text-center text-gray-400 py-6">
+                                    Ready for next player
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6">
+                                <button v-if="table.status === 'available'" @click="openStartSessionModal(table.id)" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-semibold transition">
+                                    Start Session
+                                </button>
+                                <div v-else class="flex flex-col gap-2">
+                                    <div class="flex gap-2">
+                                        <button v-if="!table.isAdminMode" @click="table.isPaused = !table.isPaused" :class="['flex-1 py-2 rounded-lg font-semibold transition text-white text-sm', table.isPaused ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-500 hover:bg-gray-600']">
+                                            {{ table.isPaused ? 'Resume' : 'Pause' }}
+                                        </button>
+                                        <div v-else class="flex-1 text-center text-xs text-purple-600 font-semibold flex items-center justify-center bg-purple-100 rounded-lg">
+                                            Admin Active
+                                        </div>
+                                        <button @click="openManageModal(table.id)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold transition text-sm">
+                                            Manage
+                                        </button>
+                                    </div>
+                                    <button @click="openTransferModal(table.id)" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold text-xs py-1.5 rounded transition">
+                                        🔄 Transfer Session
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="w-full lg:w-72 bg-white rounded-xl shadow-lg p-5 border border-gray-200" data-html2canvas-ignore>
+                        <h3 class="text-lg font-bold flex items-center gap-2 mb-3 border-b pb-2">
+                            📋 Waitlist Queue
+                        </h3>
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" v-model="newWaitlistName" @keyup.enter="addToWaitlist" placeholder="Customer Name..." class="border p-2 rounded text-sm flex-1 focus:outline-blue-500" />
+                            <button @click="addToWaitlist" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 font-bold text-sm">+</button>
+                        </div>
+                        <ul class="space-y-2 max-h-96 overflow-y-auto">
+                            <li v-for="(name, index) in waitlist" :key="index" class="flex justify-between items-center bg-gray-50 p-2.5 rounded border text-sm">
+                                <span class="truncate font-medium text-gray-800">
+                                    <span class="text-blue-600 font-bold mr-1">#{{ index + 1 }}</span> {{ name }}
+                                </span>
+                                <button @click="removeFromWaitlist(index)" class="text-gray-400 hover:text-red-500 font-bold transition text-base px-1" title="Remove from list">
+                                    &times;
+                                </button>
+                            </li>
+                            <li v-if="waitlist.length === 0" class="text-gray-400 text-sm italic py-4 text-center">
+                                No customers waiting.
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="activeTab === 'walkin'" class="max-w-4xl mx-auto p-6 space-y-8">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold mb-2">Walk-In Sales Terminal</h2>
+                    <p class="text-gray-600 text-sm mb-6">Service bar counters or individual purchases for clients not linked to a timed table profile.</p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="font-bold text-lg mb-3 border-b pb-2">1. Customer Identification & Menu Selection</h3>
+                            <div class="mb-4">
+                                <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Customer / Walk-In Name:</label>
+                                <input type="text" v-model="walkInCustomerName" class="border p-2 rounded w-full text-sm focus:outline-blue-500" placeholder="e.g. Bar Guest John" />
+                            </div>
+                            <div class="flex gap-2 mb-4">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Select Item:</label>
+                                    <input list="walkInInventoryList" v-model="walkInSelectedItemName" class="border p-2 rounded w-full text-sm focus:outline-blue-500" placeholder="Type to search menu..." />
+                                    <datalist id="walkInInventoryList">
+                                        <option v-for="i in inventory" :key="i.id" :value="i.name">
+                                            {{ formatCurrency(i.price) }}
+                                        </option>
+                                    </datalist>
+                                </div>
+                                <div class="w-20">
+                                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Qty:</label>
+                                    <input type="number" min="1" v-model.number="walkInOrderQty" class="border p-2 rounded w-full text-center text-sm focus:outline-blue-500" />
+                                </div>
+                                <div class="flex items-end">
+                                    <button @click="addWalkInOrder" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold h-9 flex items-center justify-center">+</button>
+                                </div>
+                            </div>
+
+                            <h3 class="font-bold text-sm text-gray-700 uppercase tracking-wider mb-2 mt-4">Current Walk-In Orders Totaled:</h3>
+                            <ul class="max-h-48 overflow-y-auto space-y-2 border p-3 rounded bg-gray-50">
+                                <li v-for="order in walkInOrders" :key="order.orderId" class="flex justify-between items-center text-sm bg-white p-2 rounded border">
+                                    <span>{{ order.qty }}x {{ order.name }} <span class="text-gray-400 text-xs">@ {{ formatCurrency(order.price) }}</span></span>
+                                    <div class="flex items-center gap-3">
+                                        <span class="font-semibold">{{ formatCurrency(order.subtotal) }}</span>
+                                        <button @click="removeWalkInOrder(order.orderId)" class="text-red-500 hover:text-red-700 font-bold">&times;</button>
+                                    </div>
+                                </li>
+                                <li v-if="walkInOrders.length === 0" class="text-gray-400 text-sm italic py-2 text-center">No inventory orders staged yet.</li>
+                            </ul>
+                        </div>
+
+                        <div class="border-t md:border-t-0 md:border-l pt-6 md:pt-0 md:pl-6 flex flex-col justify-between">
+                            <div>
+                                <h3 class="font-bold text-lg mb-3 border-b pb-2">2. Processing & Settlement Plan</h3>
+                                <div class="bg-gray-50 p-4 rounded border text-right mb-4">
+                                    <div class="flex justify-between text-gray-600 mb-1"><span>Walk-In Subtotal:</span> <span class="font-semibold">{{ formatCurrency(walkInOrdersTotal) }}</span></div>
+                                    <div class="flex justify-between text-gray-600 mb-2 items-center">
+                                        <span>Discount Amount:</span>
+                                        <input type="number" min="0" step="0.01" placeholder="0.00" v-model.number="walkInDiscount" class="border p-1 text-sm rounded w-24 text-right focus:outline-blue-500 bg-white" />
+                                    </div>
+                                    <div class="flex justify-between text-xl font-bold text-gray-900 border-t pt-2"><span>Grand Total Owed:</span> <span>{{ formatCurrency(Math.max(0, walkInOrdersTotal - walkInDiscount)) }}</span></div>
+                                </div>
+
+                                <div class="mb-4">
+                                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Payment Scheme Setup:</label>
+                                    <select v-model="walkInPaymentType" class="border p-2 rounded text-sm bg-white focus:outline-blue-500 w-full">
+                                        <option value="Full">Paid In Full</option>
+                                        <option value="Partial">Partial Payment Option</option>
+                                        <option value="To Collect">Pending Payments Profile</option>
+                                    </select>
+                                </div>
+
+                                <div v-if="walkInPaymentType === 'Partial'" class="mb-4 bg-orange-50 p-3 rounded border border-orange-100">
+                                    <label class="block text-xs text-gray-700 font-bold uppercase mb-1">Initial Input Cash Deposited:</label>
+                                    <input type="number" step="0.01" min="0" :max="Math.max(0, walkInOrdersTotal - walkInDiscount)" v-model.number="walkInPartialAmountPaid" class="border p-1.5 rounded text-sm w-full focus:outline-orange-500" />
+                                </div>
+                            </div>
+
+                            <div class="pt-4 border-t">
+                                <button @click="checkoutWalkIn" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold text-lg shadow transition">
+                                    Process Sale Receipt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="activeTab === 'settings'" class="max-w-4xl mx-auto p-6 space-y-8">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">Global Settings</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Hourly Rate</label>
+                            <input type="number" v-model.number="hourlyRate" class="border p-2 rounded w-full max-w-xs" />
+                            <p class="text-sm text-gray-500 mt-2">Note: Rent tracks minimum 30 minutes, then changes exactly when a new full minute is reached.</p>
+                            <div class="mt-4">
+                                <button @click="saveData" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-semibold">Save Settings</button>
+                            </div>
+                        </div>
+                        
+                        <div class="border-t md:border-t-0 md:border-l pt-6 md:pt-0 md:pl-6">
+                            <h3 class="text-lg font-bold text-gray-900 mb-2">Device Migration & Backup</h3>
+                            <p class="text-sm text-gray-600 mb-4">Move your inventory, menus, settings, and outstanding ledger totals smoothly to another tablet.</p>
+                            <div class="flex flex-col gap-3">
+                                <button @click="exportBackupFile" class="bg-gray-800 hover:bg-black text-white text-sm px-4 py-2.5 rounded-lg font-semibold shadow transition text-center w-full max-w-xs">
+                                    📦 Export Backup Data File
+                                </button>
+                                <div class="w-full max-w-xs">
+                                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Import Data File From Old Device:</label>
+                                    <input type="file" accept=".json" @change="importBackupFile" class="text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer w-full border p-1 rounded" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">Inventory Management</h2>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Quick Search Menu Items & Prices</label>
+                        <input type="text" placeholder="Type name to view or verify price..." v-model="inventorySearchQuery" class="border p-2 rounded w-full max-w-md text-sm focus:outline-blue-500" />
+                    </div>
+
+                    <form @submit.prevent="addInventoryItem" class="flex gap-4 mb-6">
+                        <input type="text" placeholder="Item Name" v-model="newItemName" class="border p-2 rounded flex-1" required />
+                        <input type="number" step="0.01" placeholder="Price" v-model.number="newItemPrice" class="border p-2 rounded w-32" required />
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700">Add Item</button>
+                    </form>
+                    
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b">
+                                <th class="py-2">Item Name</th>
+                                <th class="py-2">Price</th>
+                                <th class="py-2 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="item in filteredSettingsInventory" :key="item.id" class="border-b">
+                                <td class="py-2 font-medium text-gray-900">{{ item.name }}</td>
+                                <td class="py-2">
+                                    <input type="number" step="0.01" v-model.number="item.price" class="border p-1 rounded w-24 text-sm" />
+                                </td>
+                                <td class="py-2 text-right">
+                                    <button @click="removeInventoryItem(item.id)" class="text-red-500 hover:text-red-700 text-sm font-semibold">Delete</button>
+                                </td>
+                            </tr>
+                            <tr v-if="filteredSettingsInventory.length === 0">
+                                <td colspan="3" class="py-4 text-center text-gray-500">No matching items found.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="mt-6 border-t pt-4 flex justify-end">
+                        <button @click="saveInventoryChanges" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
+                            Save Inventory Changes
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="activeTab === 'tocollect'" class="max-w-4xl mx-auto p-6 space-y-8">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold mb-2">Balances Pending Payments</h2>
+                    <p class="text-gray-600 text-sm mb-6">Manage customers with accounts holding unpaid structures, records, or balance dues.</p>
+
+                    <div v-if="Object.keys(toCollectLedger).length === 0" class="text-gray-500 italic py-4 text-center">
+                        No outstanding balances to collect at this time.
+                    </div>
+
+                    <div v-for="(profile, accountName) in toCollectLedger" :key="accountName" class="mb-6 bg-gray-50 p-5 rounded-lg border border-gray-200 shadow-sm">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-2 mb-3">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-900">Debtor: {{ accountName }}</h3>
+                            </div>
+                            <div class="text-right mt-1 sm:mt-0">
+                                <span class="text-sm text-gray-600 font-medium">Total Unpaid Balance: </span>
+                                <span class="text-xl font-bold text-red-600">{{ formatCurrency(profile.totalBalance) }}</span>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <p class="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">History of Unpaid Tabs:</p>
+                            <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                <div v-for="entry in profile.entries" :key="entry.id" class="bg-white p-3 rounded border text-sm flex flex-col justify-between gap-1">
+                                    <div class="flex justify-between font-medium">
+                                        <span>Origin: {{ entry.tableName || 'Direct Account' }}</span>
+                                        <span>Total Owed: {{ formatCurrency(entry.totalOwed) }}</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500 flex justify-between">
+                                        <span>Date Added: {{ entry.date }} ({{ entry.time }})</span>
+                                        <span class="text-red-500 font-semibold">Remaining Due: {{ formatCurrency(entry.balance) }}</span>
+                                    </div>
+                                    
+                                    <div v-if="entry.adminNotes" class="text-xs bg-purple-50 text-purple-800 p-2 rounded mt-1 border border-purple-100">
+                                        <strong>Admin Note:</strong> {{ entry.adminNotes }}
+                                    </div>
+
+                                    <div v-if="entry.importantNotes" class="text-xs bg-yellow-50 text-yellow-800 p-2 rounded mt-1 border border-yellow-100">
+                                        <strong>Session Note:</strong> {{ entry.importantNotes }}
+                                    </div>
+
+                                    <div v-if="entry.timeCost !== undefined && entry.timeCost > 0" class="text-xs text-gray-700 bg-blue-50 p-1.5 rounded mt-1 border border-blue-100 font-mono">
+                                        <span v-if="entry.isVoided" class="text-red-600 font-bold">⚡ Rent Time Cost Voided (₱0.00)</span>
+                                        <span v-else-if="entry.isAdminMode">⚡ Admin Mode Custom Cost: {{ formatCurrency(entry.timeCost) }}</span>
+                                        <span v-else-if="entry.elapsedSeconds !== undefined && Math.floor(entry.elapsedSeconds / 60) <= 30">
+                                            ⏱️ Minimum Time Cost {{ formatCurrency(entry.timeCost) }}
+                                        </span>
+                                        <span v-else-if="entry.elapsedSeconds !== undefined">
+                                            ⏱️ {{ formatHHMM(entry.elapsedSeconds) }} Time Cost {{ formatCurrency(entry.timeCost) }}
+                                        </span>
+                                    </div>
+
+                                    <div v-if="entry.items && entry.items.length > 0" class="mt-1 pt-1 border-t text-xs text-gray-600">
+                                        <span class="font-bold text-gray-700">Included Orders Breakdown:</span>
+                                        <ul class="list-disc list-inside space-y-0.5 pl-1">
+                                            <li v-for="itm in entry.items">
+                                                {{ itm.qty }}x {{ itm.name }} <span class="text-gray-500">@ {{ formatCurrency(itm.price) }}</span> = <span class="font-medium text-gray-800">{{ formatCurrency(itm.subtotal) }}</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-3 rounded border flex flex-wrap items-center gap-4 justify-between">
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs font-bold text-gray-700 uppercase">Process Payment Plan:</label>
+                                <input type="number" step="0.01" min="0.01" :max="profile.totalBalance" placeholder="Amount" v-model.number="collectPayments[accountName]" class="border p-1 text-sm rounded w-28" />
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="payBalanceFull(accountName)" class="bg-green-600 hover:bg-green-700 text-white font-semibold text-xs px-3 py-2 rounded transition">
+                                    Pay In Full
+                                </button>
+                                <button @click="payBalancePartial(accountName)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3 py-2 rounded transition">
+                                    Record Partial
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="activeTab === 'reports'" class="max-w-4xl mx-auto p-6 space-y-8">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-md gap-4" data-html2canvas-ignore>
+                    <div>
+                        <h2 class="text-2xl font-bold">Daily Report Manager</h2>
+                        <p class="text-gray-600 text-sm">View sales, track expenses, or clean ledger records safely.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 w-full md:w-auto">
+                        <select @change="handleCleanRecords" class="bg-gray-800 text-white text-sm px-4 py-3 rounded-lg font-bold shadow hover:bg-black transition cursor-pointer outline-none">
+                            <option value="" disabled selected hidden>🧹 Clear Ledger Records...</option>
+                            <option value="sales">Clear Sales Records Only</option>
+                            <option value="expenses">Clear Expense Records Only</option>
+                            <option value="all">Reset All Financial Records</option>
+                        </select>
+                        
+                        <button @click="exportToPDF" class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold shadow transition flex items-center gap-2 text-sm ml-auto md:ml-0">
+                            📄 Export to PDF
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center bg-white p-4 rounded-xl shadow-md" data-html2canvas-ignore>
+                    <div class="flex items-center justify-between bg-gray-50 border p-3 rounded-lg">
+                        <button @click="navigateDate(-1)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded font-bold transition">&larr;</button>
+                        <span class="font-bold text-lg text-gray-800">{{ reportDateLabel }}</span>
+                        <button @click="navigateDate(1)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded font-bold transition">&rarr;</button>
+                    </div>
+                    <div class="text-sm text-gray-500 text-center md:text-right">
+                        Click arrows to switch views between past or present transactions.
+                    </div>
+                </div>
+
+                <div id="pdf-content" class="bg-white p-8 rounded-xl shadow-md space-y-8">
+                    <div class="border-b-4 border-gray-900 pb-3 flex justify-between items-end">
+                        <div>
+                            <h1 class="text-2xl font-extrabold tracking-tight text-gray-900">Yujin Billiard Hall Sales Report</h1>
+                            <p class="text-xs uppercase tracking-wider text-gray-500 font-bold">Official Performance Summary Log</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-mono font-bold text-gray-700">Date: {{ selectedReportDateString }}</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                            <div class="flex items-center justify-between">
+                                <p class="text-green-800 font-bold text-sm uppercase">Total Sales</p>
+                            </div>
+                            <p class="text-3xl font-bold text-green-900">{{ formatCurrency(totalSalesAmount) }}</p>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+                            <p class="text-red-800 font-bold text-sm uppercase">Total Expenses</p>
+                            <p class="text-3xl font-bold text-red-900">{{ formatCurrency(totalExpensesAmount) }}</p>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <div class="flex items-center justify-between">
+                                <p class="text-blue-800 font-bold text-sm uppercase">Net Profit</p>
+                            </div>
+                            <p class="text-3xl font-bold text-blue-900">{{ formatCurrency(totalSalesAmount - totalExpensesAmount) }}</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 border-b pb-2">Sales Ledger (Completed Tables)</h3>
+                        <div v-if="filteredSales.length === 0" class="text-gray-500 italic">No sales recorded yet for this date.</div>
+                        <div v-for="sale in filteredSales" :key="sale.id" class="mb-4 bg-gray-50 p-4 rounded border">
+                            <div class="flex justify-between font-bold text-lg mb-2">
+                                <span>
+                                    {{ sale.tableName }} - {{ sale.customerName }}
+                                    <span v-if="sale.isAdminMode" class="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded ml-2 uppercase font-sans">Admin Use</span>
+                                    <span v-if="sale.isVoided" class="text-xs bg-red-200 text-red-800 px-2 py-0.5 rounded ml-2 uppercase font-sans">Time Voided</span>
+                                </span>
+                                <span>{{ formatCurrency(sale.total) }}</span>
+                            </div>
+                            <div class="text-sm text-gray-600 flex justify-between mb-2">
+                                <span v-if="sale.isVoided">Session Settings: Play Rent Time Cost Voided (₱0.00)</span>
+                                <span v-else-if="sale.isAdminMode">Session Settings: Flat Cost Play ({{ formatCurrency(sale.timeCost) }})</span>
+                                <span v-else>Time Played: {{ sale.formattedTime }} ({{ formatCurrency(sale.timeCost) }})</span>
+                                <span>{{ sale.timestamp }}</span>
+                            </div>
+                            <div v-if="sale.adminNotes" class="text-xs text-purple-700 bg-purple-50 p-1.5 rounded mb-2 border border-purple-100">
+                                <strong>Admin Log Reason:</strong> {{ sale.adminNotes }}
+                            </div>
+                            <div v-if="sale.importantNotes" class="text-xs text-yellow-700 bg-yellow-50 p-1.5 rounded mb-2 border border-yellow-100">
+                                <strong>Session Note:</strong> {{ sale.importantNotes }}
+                            </div>
+                            <div class="text-xs font-semibold mb-2" :class="sale.paymentStatus === 'Full' ? 'text-green-600' : 'text-orange-600'">
+                                Payment: {{ sale.paymentStatus || 'Full' }} 
+                                <span v-if="sale.discount && sale.discount > 0" class="text-purple-600 ml-1">(Discounted: -{{ formatCurrency(sale.discount) }})</span>
+                                <span v-if="sale.paymentStatus === 'Partial'">(Paid: {{ formatCurrency(sale.amountPaid) }}, Owed: {{ formatCurrency(sale.total - sale.amountPaid) }})</span>
+                                <span v-if="sale.paymentStatus === 'To Collect'">(Unpaid Balance Sent To Ledger)</span>
+                            </div>
+                            
+                            <div v-if="sale.orders.length > 0" class="mt-2 pt-2 border-t text-sm">
+                                <p class="font-bold text-gray-700 mb-1">Sold Items:</p>
+                                <ul class="list-disc list-inside text-gray-600">
+                                    <li v-for="order in sale.orders" :key="order.orderId">
+                                        {{ order.qty }}x {{ order.name }} = {{ formatCurrency(order.subtotal) }}
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 border-b pb-2">Expenses</h3>
+                        
+                        <form @submit.prevent="addExpense" class="flex gap-4 mb-6" data-html2canvas-ignore>
+                            <input type="text" placeholder="Expense Description" v-model="newExpenseDesc" class="border p-2 rounded flex-1" required />
+                            <input type="number" step="0.01" placeholder="Amount" v-model.number="newExpenseAmt" class="border p-2 rounded w-32" required />
+                            <button type="submit" class="bg-gray-800 text-white px-4 py-2 rounded font-semibold hover:bg-black">Add Expense</button>
+                        </form>
+
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b">
+                                    <th class="py-2">Expense Description</th>
+                                    <th class="py-2">Amount</th>
+                                    <th class="py-2 text-right" data-html2canvas-ignore>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="exp in filteredExpenses" :key="exp.id" class="border-b">
+                                    <td class="py-2 text-gray-800 font-medium">{{ exp.description }}</td>
+                                    <td class="py-2 font-mono text-red-600 font-semibold">{{ formatCurrency(exp.amount) }}</td>
+                                    <td class="py-2 text-right text-sm" data-html2canvas-ignore>
+                                        <button @click="removeExpense(exp.id)" class="text-gray-400 hover:text-red-500 font-bold">&times; Remove</button>
+                                    </td>
+                                </tr>
+                                <tr v-if="filteredExpenses.length === 0">
+                                    <td colspan="3" class="py-4 text-center text-gray-400 italic">No expenses recorded for this date.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div v-if="startingTableId !== null" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 class="text-xl font-bold">Open Session: {{ getTableName(startingTableId) }}</h3>
+                    <button @click="startingTableId = null" class="text-gray-400 text-xl hover:text-gray-600">&times;</button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Customer / Group Identification:</label>
+                        <input type="text" v-model="sessionInputName" placeholder="Enter guest profile label..." class="w-full border p-2 rounded text-sm focus:outline-blue-500" />
+                    </div>
+                    <div class="bg-gray-50 p-3 rounded border">
+                        <label class="flex items-center gap-2 font-semibold text-sm text-gray-800 cursor-pointer">
+                            <input type="checkbox" v-model="sessionIsAdmin" class="w-4 h-4 rounded text-purple-600 focus:ring-purple-500" />
+                            Admin Configuration
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1 pl-6">Disables automated running timers. Lets you write setup notes and choose a manually fixed bill rate later.</p>
+                    </div>
+                    <div v-if="sessionIsAdmin" class="space-y-3 pt-1">
+                        <div>
+                            <label class="block text-xs font-bold text-purple-800 uppercase mb-1">Admin Reason Notes / Description:</label>
+                            <input type="text" v-model="sessionAdminNotes" placeholder="e.g. Free Visitor Play / High Bet Match No Timer" class="w-full border border-purple-300 p-2 rounded text-sm focus:outline-purple-500" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-purple-800 uppercase mb-1">Initial Flat Table Base Price (₱):</label>
+                            <input type="number" min="0" step="0.01" v-model.number="sessionAdminCost" class="w-full border border-purple-300 p-2 rounded font-mono text-sm focus:outline-purple-500" />
+                        </div>
+                    </div>
+                    <div class="pt-2 border-t flex gap-2">
+                        <button @click="startingTableId = null" class="flex-1 bg-gray-200 hover:bg-gray-300 py-2 rounded text-sm font-semibold">Cancel</button>
+                        <button @click="confirmStartSession" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded text-sm font-semibold">Open Table</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="transferringTableId !== null" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 class="text-xl font-bold">Transfer Session</h3>
+                    <button @click="transferringTableId = null" class="text-gray-400 text-xl hover:text-gray-600">&times;</button>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">
+                    Transfer player from <strong>{{ getTableName(transferringTableId) }}</strong> along with their active duration, menu tab orders, and billing structures.
+                </p>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Select Destination Table:</label>
+                        <select v-model="transferTargetTableId" class="w-full border p-2 rounded text-sm bg-white focus:outline-blue-500">
+                            <option :value="null" disabled>-- Choose an available table --</option>
+                            <option v-for="t in tables.filter(x => x.id !== transferringTableId && x.status === 'available')" :key="t.id" :value="t.id">
+                                {{ t.name }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="pt-2 border-t flex gap-2">
+                        <button @click="transferringTableId = null" class="flex-1 bg-gray-200 hover:bg-gray-300 py-2 rounded text-sm font-semibold">Cancel</button>
+                        <button @click="confirmTransferSession" :disabled="!transferTargetTableId" class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2 rounded text-sm font-semibold">Confirm Transfer</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="managingTableId !== null" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+                <div class="flex justify-between items-center pb-3 border-b mb-4 sticky top-0 bg-white z-10">
+                    <div>
+                        <h3 class="text-xl font-bold">Manage Transaction Profile: {{ getManagingTable().name }}</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Control live duration rates, items tab billing, and finalize payment parameters.</p>
+                    </div>
+                    <button @click="managingTableId = null" class="text-gray-400 text-2xl hover:text-gray-600">&times;</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    <div class="space-y-4">
+                        <div class="p-4 rounded-xl border" :class="getManagingTable().isAdminMode ? 'bg-purple-50 border-purple-200' : 'bg-blue-50 border-blue-100'">
+                            <p class="text-gray-600 mb-2 uppercase tracking-wide text-sm font-bold">
+                                {{ getManagingTable().isAdminMode ? '👑 Admin Custom Charge' : 'Elapsed Time' }}
+                            </p>
+                            <div v-if="!getManagingTable().isAdminMode">
+                                <div class="text-5xl font-mono font-bold text-blue-700 mb-4">
+                                    {{ formatTime(getManagingTable().elapsedSeconds) }}
+                                </div>
+                                <p class="text-xl text-gray-700">Time Cost: <span class="font-bold" :class="{'line-through text-gray-400': getManagingTable().isVoided}">{{ formatCurrency(calculateTimeCost(getManagingTable().elapsedSeconds, getManagingTable().isVoided)) }}</span></p>
+                                <p class="text-xs text-gray-500 mt-2">Minimum 30 mins, seconds truncated</p>
+                                
+                                <div class="mt-4 pt-3 border-t border-blue-200">
+                                    <label class="flex items-center gap-2 font-bold text-sm text-red-700 cursor-pointer">
+                                        <input type="checkbox" v-model="getManagingTable().isVoided" @change="saveSilent" class="w-4 h-4 text-red-600 rounded focus:ring-red-500" />
+                                        🚫 Void / Wipe Time Cost (Charge ₱0.00 for time)
+                                    </label>
+                                    <p class="text-xs text-gray-500 pl-6 mt-0.5">Check this if they change their mind or switch to high bets immediately without table base costs.</p>
+                                </div>
+                            </div>
+                            <div v-else>
+                                <div class="flex items-center justify-center gap-1 mb-2">
+                                    <span class="text-xl font-bold text-purple-900">₱</span>
+                                    <input type="number" min="0" step="0.01" v-model.number="getManagingTable().adminCustomCost" class="border rounded p-2 text-center text-3xl font-mono font-bold text-purple-700 bg-white w-44" @change="saveSilent" />
+                                </div>
+                                <p class="text-xs text-purple-600 font-semibold mb-2">Change fee manually anytime above.</p>
+                                <div class="text-left mt-3">
+                                    <label class="block text-xs font-bold text-purple-800 uppercase mb-1">Update Log Reason:</label>
+                                    <input type="text" v-model="getManagingTable().adminNotes" placeholder="e.g. Update notes or reason here..." class="w-full border border-purple-300 p-2 rounded text-sm bg-white focus:outline-purple-500" @input="saveSilent" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-4 rounded-xl border bg-gray-50 space-y-3">
+                            <h4 class="font-bold text-sm text-gray-700 uppercase tracking-wider border-b pb-1">👤 Customer & Session details</h4>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Customer / Group Name:</label>
+                                <input type="text" v-model="getManagingTable().customerName" @input="saveSilent" placeholder="Edit customer name..." class="w-full border p-2 rounded text-sm bg-white focus:outline-blue-500 font-medium" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Important Notes / Reminders per Table:</label>
+                                <textarea rows="2" v-model="getManagingTable().importantNotes" @input="saveSilent" placeholder="Put something important here (e.g., cues borrowed, specific arrangement details, high-stake bets updates)..." class="w-full border p-2 rounded text-sm bg-white focus:outline-blue-500 text-gray-800"></textarea>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="font-bold text-lg mb-3 border-b pb-2">Add Food / Drink</h3>
+                            <div class="flex gap-2 mb-4">
+                                <input list="inventoryList" v-model="selectedItemName" class="border p-2 rounded flex-1 text-sm focus:outline-blue-500" placeholder="Type to search or scroll..." />
+                                <datalist id="inventoryList">
+                                    <option v-for="item in inventory" :key="item.id" :value="item.name">
+                                        {{ formatCurrency(item.price) }}
+                                    </option>
+                                </datalist>
+                                <input type="number" min="1" v-model.number="orderQty" class="border p-2 rounded w-16 text-center text-sm focus:outline-blue-500" />
+                                <button @click="addOrder" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 text-sm">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="font-bold text-lg mb-2 border-b pb-2">Active Staged Tab Orders</h3>
+                            <div class="max-h-48 overflow-y-auto border rounded-lg bg-gray-50 divide-y">
+                                <div v-for="order in getManagingTable().orders" :key="order.orderId" class="p-3 flex justify-between items-center bg-white text-sm">
+                                    <div>
+                                        <span class="font-semibold text-gray-900">{{ order.qty }}x</span> {{ order.name }}
+                                        <p class="text-xs text-gray-500">{{ formatCurrency(order.price) }} each</p>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="font-mono font-bold text-gray-800">{{ formatCurrency(order.subtotal) }}</span>
+                                        <button @click="removeOrder(order.orderId)" class="text-red-500 text-xl font-bold hover:text-red-700 px-1">&times;</button>
+                                    </div>
+                                </div>
+                                <div v-if="getManagingTable().orders.length === 0" class="text-center py-8 text-gray-400 text-sm italic">
+                                    No food or beverages linked to tab yet.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-900 text-white p-4 rounded-xl shadow-inner space-y-2 text-right">
+                            <div class="flex justify-between text-gray-400 text-sm">
+                                <span>Rent Total Owed:</span>
+                                <span class="font-mono">{{ formatCurrency(tableRentOwed) }}</span>
+                            </div>
+                            <div class="flex justify-between text-gray-400 text-sm">
+                                <span>Inventory Orders:</span>
+                                <span class="font-mono">{{ formatCurrency(getOrdersTotal(getManagingTable())) }}</span>
+                            </div>
+                            <div class="flex justify-between text-gray-400 text-sm items-center">
+                                <span>Discount Input Amount:</span>
+                                <input type="number" min="0" step="0.01" placeholder="0.00" v-model.number="checkoutDiscount" class="border border-gray-700 bg-gray-800 text-white p-1 text-sm rounded w-24 text-right focus:outline-blue-500" />
+                            </div>
+                            <div class="flex justify-between text-xl font-bold pt-2 border-t border-gray-800 text-green-400">
+                                <span>Grand Total Due:</span>
+                                <span class="font-mono">{{ formatCurrency(grandTotalCalculated) }}</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 p-4 border rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div class="w-full sm:w-auto">
+                                <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Payment Strategy Scheme:</label>
+                                <select v-model="checkoutPaymentType" class="border p-2 rounded text-sm bg-white focus:outline-blue-500 w-full sm:w-44">
+                                    <option value="Full">Paid In Full</option>
+                                    <option value="Partial">Partial Payment</option>
+                                    <option value="To Collect">To Collect (Unpaid Account)</option>
+                                </select>
+                                <div v-if="checkoutPaymentType === 'Partial'" class="mt-2">
+                                    <label class="block text-xs text-gray-600 mb-1">Initial Partial Input Amount:</label>
+                                    <input type="number" step="0.01" min="0" :max="grandTotalCalculated" v-model.number="checkoutPartialAmountPaid" class="border p-1 rounded text-sm w-full bg-white" />
+                                </div>
+                            </div>
+                            <button @click="checkoutTable(getManagingTable().id)" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold text-lg shadow-lg transition">
+                                Checkout & Record Sale
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref('dashboard');
+                const hourlyRate = ref(100);
+                
+                const inventory = ref([
+                    { id: 1, name: 'Bottled Water', price: 20 },
+                    { id: 2, name: 'Beer', price: 80 },
+                    { id: 3, name: 'French Fries', price: 120 }
+                ]);
+
+                // Initial collection of 10 tables with parameters updated to support notes & void options
+                const tables = ref(Array.from({ length: 10 }, (_, i) => ({
+                    id: i + 1,
+                    name: `Table ${i + 1}`,
+                    status: 'available',
+                    customerName: '',
+                    startTime: null,
+                    elapsedSeconds: 0,
+                    orders: [],
+                    isPaused: false,
+                    isAdminMode: false,
+                    adminNotes: '',
+                    importantNotes: '',
+                    adminCustomCost: 0,
+                    isVoided: false
+                })));
+
+                const sales = ref([]);
+                const expenses = ref([]);
+                const waitlist = ref([]);
+                const toCollectLedger = ref({});
+
+                const newItemName = ref('');
+                const newItemPrice = ref('');
+                const newExpenseDesc = ref('');
+                const newExpenseAmt = ref('');
+                const newWaitlistName = ref('');
+                const inventorySearchQuery = ref('');
+
+                // Modal variables
+                const startingTableId = ref(null);
+                const sessionInputName = ref('');
+                const sessionIsAdmin = ref(false);
+                const sessionAdminNotes = ref('');
+                const sessionAdminCost = ref(0);
+
+                const transferringTableId = ref(null);
+                const transferTargetTableId = ref(null);
+
+                const managingTableId = ref(null);
+                const selectedItemName = ref('');
+                const orderQty = ref(1);
+
+                const checkoutPaymentType = ref('Full');
+                const checkoutPartialAmountPaid = ref(0);
+                const checkoutDiscount = ref(0);
+                const collectPayments = ref({});
+
+                const walkInCustomerName = ref('');
+                const walkInSelectedItemName = ref('');
+                const walkInOrderQty = ref(1);
+                const walkInOrders = ref([]);
+                const walkInPaymentType = ref('Full');
+                const walkInPartialAmountPaid = ref(0);
+                const walkInDiscount = ref(0);
+
+                const selectedReportDate = ref(new Date());
+                const STORAGE_KEY = 'ybh_billiard_hall_manager_data';
+
+                let clockInterval = null;
+
+                onMounted(() => {
+                    loadData();
+                    clockInterval = setInterval(updateActiveTimers, 1000);
+                });
+
+                onUnmounted(() => {
+                    if (clockInterval) clearInterval(clockInterval);
+                });
+
+                const updateActiveTimers = () => {
+                    let changed = false;
+                    tables.value.forEach(table => {
+                        if (table.status === 'occupied' && !table.isPaused && !table.isAdminMode) {
+                            table.elapsedSeconds = Math.floor((Date.now() - table.startTime) / 1000);
+                            changed = true;
+                        }
+                    });
+                    if (changed) {
+                        saveSilent();
+                    }
+                };
+
+                const saveSilent = () => {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                        hourlyRate: hourlyRate.value,
+                        inventory: inventory.value,
+                        tables: tables.value,
+                        sales: sales.value,
+                        expenses: expenses.value,
+                        toCollectLedger: toCollectLedger.value,
+                        waitlist: waitlist.value
+                    }));
+                };
+
+                const saveData = () => {
+                    saveSilent();
+                    alert('Configuration criteria parameters saved successfully!');
+                };
+
+                const saveInventoryChanges = () => {
+                    saveSilent();
+                    alert('Inventory pricing modifications saved successfully!');
+                };
+
+                const loadData = () => {
+                    const saved = localStorage.getItem(STORAGE_KEY);
+                    if (!saved) return;
+                    try {
+                        const data = JSON.parse(saved);
+                        if (data.hourlyRate !== undefined) hourlyRate.value = data.hourlyRate;
+                        if (data.inventory) inventory.value = data.inventory;
+                        if (data.waitlist) waitlist.value = data.waitlist;
+                        if (data.tables) {
+                            tables.value = data.tables.map(t => ({
+                                isAdminMode: false,
+                                adminNotes: '',
+                                importantNotes: '',
+                                adminCustomCost: 0,
+                                isVoided: false,
+                                ...t
+                            }));
+                        }
+                        if (data.sales) sales.value = data.sales;
+                        if (data.expenses) expenses.value = data.expenses;
+                        if (data.toCollectLedger) toCollectLedger.value = data.toCollectLedger;
+                    } catch(e) {
+                        console.error("Local data parsing error", e);
+                    }
+                };
+
+                // Waitlist functions
+                const addToWaitlist = () => {
+                    const name = newWaitlistName.value.trim();
+                    if (!name) return;
+                    waitlist.value.push(name);
+                    newWaitlistName.value = '';
+                    saveSilent();
+                };
+
+                const removeFromWaitlist = (index) => {
+                    waitlist.value.splice(index, 1);
+                    saveSilent();
+                };
+
+                // Add Table Infrastructure Hook
+                const addNewTable = () => {
+                    const nextId = tables.value.length > 0 ? Math.max(...tables.value.map(t => t.id)) + 1 : 1;
+                    tables.value.push({
+                        id: nextId,
+                        name: `Table ${nextId}`,
+                        status: 'available',
+                        customerName: '',
+                        startTime: null,
+                        elapsedSeconds: 0,
+                        orders: [],
+                        isPaused: false,
+                        isAdminMode: false,
+                        adminNotes: '',
+                        importantNotes: '',
+                        adminCustomCost: 0,
+                        isVoided: false
+                    });
+                    saveSilent();
+                };
+
+                // Remove Table Hook
+                const deleteTable = (id) => {
+                    const table = tables.value.find(t => t.id === id);
+                    if (!table) return;
+                    if (table.status !== 'available') {
+                        alert("Cannot remove an active session table.");
+                        return;
+                    }
+                    if (confirm(`Are you sure you want to remove "${table.name}" permanently?`)) {
+                        tables.value = tables.value.filter(t => t.id !== id);
+                        saveSilent();
+                    }
+                };
+
+                // Computed variables mapping filter lists
+                const filteredSettingsInventory = computed(() => {
+                    if (!inventorySearchQuery.value.trim()) return inventory.value;
+                    return inventory.value.filter(i => 
+                        i.name.toLowerCase().includes(inventorySearchQuery.value.toLowerCase())
+                    );
+                });
+
+                const formatTime = (totalSeconds) => {
+                    const h = Math.floor(totalSeconds / 3600);
+                    const m = Math.floor((totalSeconds % 3600) / 60);
+                    const s = totalSeconds % 60;
+                    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                };
+
+                const formatHHMM = (totalSeconds) => {
+                    const h = Math.floor(totalSeconds / 3600);
+                    const m = Math.floor((totalSeconds % 3600) / 60);
+                    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                };
+
+                const formatCurrency = (amount) => Number(amount).toFixed(2);
+
+                const calculateTimeCost = (seconds, isVoided = false) => {
+                    if (isVoided) return 0;
+                    const totalFullMinutes = Math.floor(seconds / 60);
+                    const billableMinutes = Math.max(30, totalFullMinutes);
+                    return (billableMinutes / 60) * hourlyRate.value;
+                };
+
+                const getTableName = (id) => {
+                    const t = tables.value.find(x => x.id === id);
+                    return t ? t.name : `Table ${id}`;
+                };
+
+                const openStartSessionModal = (id) => {
+                    startingTableId.value = id;
+                    sessionInputName.value = waitlist.value.length > 0 ? waitlist.value[0] : '';
+                    sessionIsAdmin.value = false;
+                    sessionAdminNotes.value = '';
+                    sessionAdminCost.value = 0;
+                };
+
+                const confirmStartSession = () => {
+                    const name = sessionInputName.value.trim() || 'Guest Player';
+                    const table = tables.value.find(t => t.id === startingTableId.value);
+                    if (table) {
+                        table.status = 'occupied';
+                        table.customerName = name;
+                        table.startTime = Date.now();
+                        table.elapsedSeconds = 0;
+                        table.orders = [];
+                        table.isPaused = false;
+                        table.isAdminMode = sessionIsAdmin.value;
+                        table.adminNotes = sessionIsAdmin.value ? sessionAdminNotes.value : '';
+                        table.importantNotes = '';
+                        table.adminCustomCost = sessionIsAdmin.value ? parseFloat(sessionAdminCost.value || 0) : 0;
+                        table.isVoided = false;
+
+                        if (waitlist.value.length > 0 && name === waitlist.value[0]) {
+                            waitlist.value.shift();
+                        }
+                        startingTableId.value = null;
+                        saveSilent();
+                    }
+                };
+
+                const openTransferModal = (id) => {
+                    transferringTableId.value = id;
+                    transferTargetTableId.value = null;
+                };
+
+                const confirmTransferSession = () => {
+                    if (!transferTargetTableId.value || !transferringTableId.value) return;
+                    const source = tables.value.find(t => t.id === transferringTableId.value);
+                    const target = tables.value.find(t => t.id === transferTargetTableId.value);
+
+                    if (source && target && target.status === 'available') {
+                        target.status = 'occupied';
+                        target.customerName = source.customerName;
+                        target.startTime = source.startTime;
+                        target.elapsedSeconds = source.elapsedSeconds;
+                        target.orders = source.orders;
+                        target.isPaused = source.isPaused;
+                        target.isAdminMode = source.isAdminMode;
+                        target.adminNotes = source.adminNotes;
+                        target.importantNotes = source.importantNotes;
+                        target.adminCustomCost = source.adminCustomCost;
+                        target.isVoided = source.isVoided;
+
+                        // Reset Source Table
+                        source.status = 'available';
+                        source.customerName = '';
+                        source.startTime = null;
+                        source.elapsedSeconds = 0;
+                        source.orders = [];
+                        source.isPaused = false;
+                        source.isAdminMode = false;
+                        source.adminNotes = '';
+                        source.importantNotes = '';
+                        source.adminCustomCost = 0;
+                        source.isVoided = false;
+
+                        transferringTableId.value = null;
+                        saveSilent();
+                    }
+                };
+
+                const openManageModal = (id) => {
+                    managingTableId.value = id;
+                    selectedItemName.value = '';
+                    orderQty.value = 1;
+                    checkoutPaymentType.value = 'Full';
+                    checkoutPartialAmountPaid.value = 0;
+                    checkoutDiscount.value = 0;
+                };
+
+                const getManagingTable = () => {
+                    return tables.value.find(t => t.id === managingTableId.value) || {};
+                };
+
+                // Dynamic live total calculation formulas for Manage Overlay
+                const tableRentOwed = computed(() => {
+                    const t = getManagingTable();
+                    if (!t.id) return 0;
+                    return t.isAdminMode ? t.adminCustomCost : calculateTimeCost(t.elapsedSeconds, t.isVoided);
+                });
+
+                const grandTotalCalculated = computed(() => {
+                    const t = getManagingTable();
+                    if (!t.id) return 0;
+                    const totalCost = tableRentOwed.value + getOrdersTotal(t);
+                    return Math.max(0, totalCost - (checkoutDiscount.value || 0));
+                });
+
+                const getOrdersTotal = (table) => {
+                    if (!table || !table.orders) return 0;
+                    return table.orders.reduce((sum, o) => sum + o.subtotal, 0);
+                };
+
+                const getGrandTotal = (table) => {
+                    if (!table) return 0;
+                    const timeCost = table.isAdminMode ? table.adminCustomCost : calculateTimeCost(table.elapsedSeconds, table.isVoided);
+                    return timeCost + getOrdersTotal(table);
+                };
+
+                const addOrder = () => {
+                    const table = getManagingTable();
+                    if (!selectedItemName.value || orderQty.value < 1 || !table.id) return;
+
+                    const item = inventory.value.find(i => i.name.toLowerCase() === selectedItemName.value.trim().toLowerCase());
+                    if (!item) {
+                        alert('Selected menu item does not match options catalog list definitions.');
+                        return;
+                    }
+
+                    table.orders.push({
+                        id: item.id,
+                        name: item.name,
+                        price: item.price,
+                        qty: orderQty.value,
+                        subtotal: item.price * orderQty.value,
+                        orderId: Date.now()
+                    });
+
+                    selectedItemName.value = '';
+                    orderQty.value = 1;
+                    saveSilent();
+                };
+
+                const removeOrder = (orderId) => {
+                    const table = getManagingTable();
+                    if (table && table.orders) {
+                        table.orders = table.orders.filter(o => o.orderId !== orderId);
+                        saveSilent();
+                    }
+                };
+
+                const checkoutTable = (id) => {
+                    const table = tables.value.find(t => t.id === id);
+                    if (!table) return;
+
+                    const totalTimeCost = table.isAdminMode ? table.adminCustomCost : calculateTimeCost(table.elapsedSeconds, table.isVoided);
+                    const totalOrdersCost = getOrdersTotal(table);
+                    const discount = checkoutDiscount.value || 0;
+                    const grandTotal = Math.max(0, (totalTimeCost + totalOrdersCost) - discount);
+
+                    let amountPaid = grandTotal;
+                    let amountOwed = 0;
+
+                    if (checkoutPaymentType.value === 'Partial') {
+                        if (checkoutPartialAmountPaid.value < 0 || checkoutPartialAmountPaid.value > grandTotal) {
+                            alert('Please input a valid partial payment amount range.');
+                            return;
+                        }
+                        amountPaid = checkoutPartialAmountPaid.value;
+                        amountOwed = grandTotal - amountPaid;
+                    } else if (checkoutPaymentType.value === 'To Collect') {
+                        amountPaid = 0;
+                        amountOwed = grandTotal;
+                    }
+
+                    if (confirm(`Checkout ${table.customerName} via ${checkoutPaymentType.value} method?\nGrand Total: ${formatCurrency(grandTotal)}\nAmount Paid: ${formatCurrency(amountPaid)}`)) {
+                        const currentDateString = new Date().toLocaleDateString();
+
+                        if (checkoutPaymentType.value === 'Partial' || checkoutPaymentType.value === 'To Collect') {
+                            const customerKey = table.customerName || 'Staged Balance Account';
+                            if (!toCollectLedger.value[customerKey]) {
+                                toCollectLedger.value[customerKey] = { totalBalance: 0, entries: [] };
+                            }
+                            toCollectLedger.value[customerKey].entries.push({
+                                id: Date.now(),
+                                date: currentDateString,
+                                time: new Date().toLocaleTimeString(),
+                                tableName: table.name,
+                                totalOwed: grandTotal,
+                                initialPaid: amountPaid,
+                                balance: amountOwed,
+                                items: JSON.parse(JSON.stringify(table.orders)),
+                                timeCost: totalTimeCost,
+                                elapsedSeconds: table.elapsedSeconds,
+                                isAdminMode: table.isAdminMode,
+                                adminNotes: table.adminNotes,
+                                importantNotes: table.importantNotes,
+                                isVoided: table.isVoided
+                            });
+                            toCollectLedger.value[customerKey].totalBalance += amountOwed;
+                        }
+
+                        sales.value.push({
+                            id: Date.now(),
+                            dateStr: currentDateString,
+                            tableName: table.name,
+                            customerName: table.customerName,
+                            formattedTime: table.isVoided ? 'VOIDED' : (table.isAdminMode ? 'ADMIN' : formatTime(table.elapsedSeconds)),
+                            timeCost: totalTimeCost,
+                            ordersCost: totalOrdersCost,
+                            discount: discount,
+                            total: grandTotal,
+                            paymentStatus: checkoutPaymentType.value,
+                            amountPaid: amountPaid,
+                            orders: JSON.parse(JSON.stringify(table.orders)),
+                            timestamp: new Date().toLocaleTimeString(),
+                            isAdminMode: table.isAdminMode,
+                            adminNotes: table.adminNotes,
+                            importantNotes: table.importantNotes,
+                            isVoided: table.isVoided
+                        });
+
+                        // Reset Table parameters completely
+                        table.status = 'available';
+                        table.customerName = '';
+                        table.startTime = null;
+                        table.elapsedSeconds = 0;
+                        table.orders = [];
+                        table.isPaused = false;
+                        table.isAdminMode = false;
+                        table.adminNotes = '';
+                        table.importantNotes = '';
+                        table.adminCustomCost = 0;
+                        table.isVoided = false;
+
+                        managingTableId.value = null;
+                        saveSilent();
+                    }
+                };
+
+                // Walk In Logic functions
+                const walkInOrdersTotal = computed(() => {
+                    return walkInOrders.value.reduce((sum, o) => sum + o.subtotal, 0);
+                });
+
+                const addWalkInOrder = () => {
+                    if (!walkInSelectedItemName.value || walkInOrderQty.value < 1) return;
+                    const item = inventory.value.find(
+                        i => i.name.toLowerCase() === walkInSelectedItemName.value.trim().toLowerCase()
+                    );
+                    if (!item) {
+                        alert('Selected menu item does not match options.');
+                        return;
+                    }
+                    walkInOrders.value.push({
+                        id: item.id,
+                        name: item.name,
+                        price: item.price,
+                        qty: walkInOrderQty.value,
+                        subtotal: item.price * walkInOrderQty.value,
+                        orderId: Date.now()
+                    });
+                    walkInSelectedItemName.value = '';
+                    walkInOrderQty.value = 1;
+                };
+
+                const removeWalkInOrder = (orderId) => {
+                    walkInOrders.value = walkInOrders.value.filter(o => o.orderId !== orderId);
+                };
+
+                const checkoutWalkIn = () => {
+                    const name = walkInCustomerName.value.trim() || 'Anonymous Walk-In';
+                    if (walkInOrders.value.length === 0) {
+                        alert('Please add at least one food or drink item before confirming.');
+                        return;
+                    }
+                    const subtotal = walkInOrdersTotal.value;
+                    const discount = walkInDiscount.value || 0;
+                    const grandTotal = Math.max(0, subtotal - discount);
+
+                    let amountPaid = grandTotal;
+                    let amountOwed = 0;
+
+                    if (walkInPaymentType.value === 'Partial') {
+                        if (walkInPartialAmountPaid.value < 0 || walkInPartialAmountPaid.value > grandTotal) {
+                            alert('Please input a valid partial payment amount range.');
+                            return;
+                        }
+                        amountPaid = walkInPartialAmountPaid.value;
+                        amountOwed = grandTotal - amountPaid;
+                    } else if (walkInPaymentType.value === 'To Collect') {
+                        amountPaid = 0;
+                        amountOwed = grandTotal;
+                    }
+
+                    if (confirm(`Checkout Walk-in Customer "${name}" via ${walkInPaymentType.value} method?\nGrand Total: ${formatCurrency(grandTotal)}\nAmount Paid: ${formatCurrency(amountPaid)}`)) {
+                        const currentDateString = new Date().toLocaleDateString();
+
+                        if (walkInPaymentType.value === 'Partial' || walkInPaymentType.value === 'To Collect') {
+                            if (!toCollectLedger.value[name]) {
+                                toCollectLedger.value[name] = { totalBalance: 0, entries: [] };
+                            }
+                            toCollectLedger.value[name].entries.push({
+                                id: Date.now(),
+                                date: currentDateString,
+                                time: new Date().toLocaleTimeString(),
+                                tableName: 'Walk-In Bar Counter',
+                                totalOwed: grandTotal,
+                                initialPaid: amountPaid,
+                                balance: amountOwed,
+                                items: JSON.parse(JSON.stringify(walkInOrders.value)),
+                                timeCost: 0
+                            });
+                            toCollectLedger.value[name].totalBalance += amountOwed;
+                        }
+
+                        sales.value.push({
+                            id: Date.now(),
+                            dateStr: currentDateString,
+                            tableName: 'Walk-In Sale',
+                            customerName: name,
+                            formattedTime: 'BAR COUNTER',
+                            timeCost: 0,
+                            ordersCost: subtotal,
+                            discount: discount,
+                            total: grandTotal,
+                            paymentStatus: walkInPaymentType.value,
+                            amountPaid: amountPaid,
+                            orders: JSON.parse(JSON.stringify(walkInOrders.value)),
+                            timestamp: new Date().toLocaleTimeString()
+                        });
+
+                        // Clear Staged Walk-in elements
+                        walkInCustomerName.value = '';
+                        walkInOrders.value = [];
+                        walkInDiscount.value = 0;
+                        walkInPartialAmountPaid.value = 0;
+                        walkInPaymentType.value = 'Full';
+                        saveSilent();
+                    }
+                };
+
+                // Ledger collection actions
+                const payBalanceFull = (accountName) => {
+                    const profile = toCollectLedger.value[accountName];
+                    if (!profile) return;
+                    if (confirm(`Record full settlement payment of ${formatCurrency(profile.totalBalance)} from ${accountName}?`)) {
+                        const currentDateString = new Date().toLocaleDateString();
+                        sales.value.push({
+                            id: Date.now(),
+                            dateStr: currentDateString,
+                            tableName: 'Ledger Collection',
+                            customerName: accountName,
+                            formattedTime: 'SETTLED',
+                            timeCost: 0,
+                            ordersCost: 0,
+                            total: profile.totalBalance,
+                            paymentStatus: 'Full',
+                            amountPaid: profile.totalBalance,
+                            orders: [],
+                            timestamp: new Date().toLocaleTimeString()
+                        });
+
+                        delete toCollectLedger.value[accountName];
+                        if (collectPayments.value[accountName]) delete collectPayments.value[accountName];
+                        saveSilent();
+                    }
+                };
+
+                const payBalancePartial = (accountName) => {
+                    const profile = toCollectLedger.value[accountName];
+                    const paymentAmount = parseFloat(collectPayments.value[accountName] || 0);
+                    if (!profile || paymentAmount <= 0 || paymentAmount > profile.totalBalance) {
+                        alert('Please input a valid parsing collection sum amount range matching dues.');
+                        return;
+                    }
+
+                    if (confirm(`Record partial breakdown collection payment of ${formatCurrency(paymentAmount)} from ${accountName}?`)) {
+                        const currentDateString = new Date().toLocaleDateString();
+                        sales.value.push({
+                            id: Date.now(),
+                            dateStr: currentDateString,
+                            tableName: 'Ledger Collection',
+                            customerName: accountName,
+                            formattedTime: 'PARTIAL PYMT',
+                            timeCost: 0,
+                            ordersCost: 0,
+                            total: paymentAmount,
+                            paymentStatus: 'Full',
+                            amountPaid: paymentAmount,
+                            orders: [],
+                            timestamp: new Date().toLocaleTimeString()
+                        });
+
+                        profile.totalBalance -= paymentAmount;
+                        let remainder = paymentAmount;
+                        for (let entry of profile.entries) {
+                            if (entry.balance > 0) {
+                                if (remainder >= entry.balance) {
+                                    remainder -= entry.balance;
+                                    entry.balance = 0;
+                                } else {
+                                    entry.balance -= remainder;
+                                    remainder = 0;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (profile.totalBalance <= 0.005) {
+                            delete toCollectLedger.value[accountName];
+                        }
+                        collectPayments.value[accountName] = '';
+                        saveSilent();
+                    }
+                };
+
+                // Report Functions
+                const navigateDate = (days) => {
+                    const d = new Date(selectedReportDate.value);
+                    d.setDate(d.getDate() + days);
+                    selectedReportDate.value = d;
+                };
+
+                const reportDateLabel = computed(() => {
+                    const todayStr = new Date().toLocaleDateString();
+                    const currentStr = selectedReportDate.value.toLocaleDateString();
+                    return todayStr === currentStr ? `Today (${currentStr})` : currentStr;
+                });
+
+                const selectedReportDateString = computed(() => {
+                    return selectedReportDate.value.toLocaleDateString();
+                });
+
+                const filteredSales = computed(() => {
+                    const filterDateStr = selectedReportDate.value.toLocaleDateString();
+                    return sales.value.filter(sale => {
+                        const datePart = sale.dateStr || new Date(sale.id).toLocaleDateString();
+                        return datePart === filterDateStr;
+                    });
+                });
+
+                const filteredExpenses = computed(() => {
+                    const filterDateStr = selectedReportDate.value.toLocaleDateString();
+                    return expenses.value.filter(exp => {
+                        const datePart = exp.dateStr || new Date(exp.id).toLocaleDateString();
+                        return datePart === filterDateStr;
+                    });
+                });
+
+                const totalSalesAmount = computed(() => {
+                    return filteredSales.value.reduce((sum, s) => sum + s.total, 0);
+                });
+
+                const totalExpensesAmount = computed(() => {
+                    return filteredExpenses.value.reduce((sum, e) => sum + e.amount, 0);
+                });
+
+                const addExpense = () => {
+                    if (!newExpenseDesc.value || !newExpenseAmt.value) return;
+                    expenses.value.push({
+                        id: Date.now(),
+                        dateStr: new Date().toLocaleDateString(),
+                        description: newExpenseDesc.value.trim(),
+                        amount: parseFloat(newExpenseAmt.value)
+                    });
+                    newExpenseDesc.value = '';
+                    newExpenseAmt.value = '';
+                    saveSilent();
+                };
+
+                const removeExpense = (id) => {
+                    expenses.value = expenses.value.filter(e => e.id !== id);
+                    saveSilent();
+                };
+
+                const handleCleanRecords = (event) => {
+                    const actionType = event.target.value;
+                    if (!actionType) return;
+                    let msg = "";
+                    if (actionType === 'sales') msg = "Are you sure you want to delete all historical Sales records?";
+                    if (actionType === 'expenses') msg = "Are you sure you want to delete all historical Expenses records?";
+                    if (actionType === 'all') msg = "Are you sure you want to wipe both Sales and Expenses records simultaneously to start completely fresh?";
+                    
+                    if (confirm(msg)) {
+                        if (actionType === 'sales' || actionType === 'all') {
+                            sales.value = [];
+                        }
+                        if (actionType === 'expenses' || actionType === 'all') {
+                            expenses.value = [];
+                        }
+                        saveSilent();
+                        alert("Selected records have been cleared from memory storage successfully!");
+                    }
+                    event.target.value = "";
+                };
+
+                const addInventoryItem = () => {
+                    if (!newItemName.value || !newItemPrice.value) return;
+                    inventory.value.push({
+                        id: Date.now(),
+                        name: newItemName.value.trim(),
+                        price: parseFloat(newItemPrice.value)
+                    });
+                    newItemName.value = '';
+                    newItemPrice.value = '';
+                    saveSilent();
+                };
+
+                const removeInventoryItem = (id) => {
+                    inventory.value = inventory.value.filter(i => i.id !== id);
+                    saveSilent();
+                };
+
+                // Export to external JSON backup script element files
+                const exportBackupFile = () => {
+                    const dataStr = JSON.stringify({
+                        hourlyRate: hourlyRate.value,
+                        inventory: inventory.value,
+                        tables: tables.value,
+                        sales: sales.value,
+                        expenses: expenses.value,
+                        toCollectLedger: toCollectLedger.value,
+                        waitlist: waitlist.value
+                    }, null, 2);
+                    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                    const exportFileDefaultName = `billiard_manager_backup_${new Date().toISOString().split('T')[0]}.json`;
+                    
+                    const linkElement = document.createElement('a');
+                    linkElement.setAttribute('href', dataUri);
+                    linkElement.setAttribute('download', exportFileDefaultName);
+                    linkElement.click();
+                };
+
+                const importBackupFile = (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const importedData = JSON.parse(e.target.result);
+                            if (confirm("Are you sure you want to import this file? It replaces data matches currently saved inside this device!")) {
+                                if (importedData.hourlyRate !== undefined) hourlyRate.value = importedData.hourlyRate;
+                                if (importedData.inventory) inventory.value = importedData.inventory;
+                                if (importedData.waitlist) waitlist.value = importedData.waitlist;
+                                if (importedData.tables) {
+                                    tables.value = importedData.tables.map(t => ({
+                                        isAdminMode: false,
+                                        adminNotes: '',
+                                        importantNotes: '',
+                                        adminCustomCost: 0,
+                                        isVoided: false,
+                                        ...t
+                                    }));
+                                }
+                                if (importedData.sales) sales.value = importedData.sales;
+                                if (importedData.expenses) expenses.value = importedData.expenses;
+                                if (importedData.toCollectLedger) toCollectLedger.value = importedData.toCollectLedger;
+                                
+                                saveSilent();
+                                alert("Database imported successfully!");
+                            }
+                        } catch(err) {
+                            alert("Failed to parse data format templates safely.");
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+
+                const exportToPDF = () => {
+                    const element = document.getElementById('pdf-content');
+                    const style = document.createElement('style');
+                    style.innerHTML = `
+                        #pdf-content { font-size: 11px !important; color: #111 !important; }
+                        #pdf-content h1 { font-size: 20px !important; margin-bottom: 2px !important; }
+                        #pdf-content h3 { font-size: 14px !important; margin-top: 12px !important; margin-bottom: 6px !important; }
+                        #pdf-content .grid { gap: 10px !important; }
+                        #pdf-content .p-4 { padding: 8px !important; }
+                        #pdf-content .p-8 { padding: 12px !important; }
+                        #pdf-content .mb-4 { margin-bottom: 6px !important; }
+                        #pdf-content form, #pdf-content button { display: none !important; }
+                    `;
+                    element.appendChild(style);
+
+                    const opt = {
+                        margin: [0.3, 0.3, 0.3, 0.3],
+                        filename: `YBH_Report_${selectedReportDateString.value.replace(/\//g, '-')}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+                        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                    };
+
+                    html2pdf().set(opt).from(element).save().then(() => {
+                        element.removeChild(style);
+                    });
+                };
+
+                return {
+                    activeTab, hourlyRate, inventory, tables, sales, expenses, waitlist, toCollectLedger,
+                    newItemName, newItemPrice, newExpenseDesc, newExpenseAmt, newWaitlistName, inventorySearchQuery,
+                    managingTableId, selectedItemName, orderQty, checkoutPaymentType, checkoutPartialAmountPaid, checkoutDiscount, collectPayments,
+                    tableRentOwed, grandTotalCalculated, filteredSettingsInventory,
+                    walkInCustomerName, walkInSelectedItemName, walkInOrderQty, walkInOrders, walkInPaymentType, walkInPartialAmountPaid, walkInDiscount, walkInOrdersTotal,
+                    selectedReportDate, reportDateLabel, selectedReportDateString, filteredSales, filteredExpenses, totalSalesAmount, totalExpensesAmount,
+                    updateActiveTimers, saveSilent, saveData, saveInventoryChanges, loadData, addToWaitlist, removeFromWaitlist, addNewTable, deleteTable,
+                    formatTime, formatHHMM, formatCurrency, calculateTimeCost, getTableName, openStartSessionModal, confirmStartSession, openTransferModal, confirmTransferSession,
+                    openManageModal, getManagingTable, getOrdersTotal, getGrandTotal, addOrder, removeOrder, checkoutTable, addWalkInOrder, removeWalkInOrder, checkoutWalkIn,
+                    payBalanceFull, payBalancePartial, navigateDate, addExpense, removeExpense, handleCleanRecords, addInventoryItem, removeInventoryItem, exportBackupFile, importBackupFile, exportToPDF,
+                    startingTableId, sessionInputName, sessionIsAdmin, sessionAdminNotes, sessionAdminCost, transferringTableId, transferTargetTableId
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
