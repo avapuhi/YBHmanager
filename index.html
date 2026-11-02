@@ -459,7 +459,7 @@
                             <div class="text-xs font-semibold mb-2" :class="sale.paymentStatus === 'Full' ? 'text-green-600' : 'text-orange-600'">
                                 Payment: {{ sale.paymentStatus || 'Full' }} 
                                 <span v-if="sale.discount && sale.discount > 0" class="text-purple-600 ml-1">(Discounted: -{{ formatCurrency(sale.discount) }})</span>
-                                <span v-if="sale.paymentStatus === 'Partial'">(Paid: {{ formatCurrency(sale.amountPaid) }}, Owed: {{ formatCurrency(sale.total - sale.amountPaid) }})</span>
+                                <span v-if="sale.paymentStatus === 'Partial'">(Paid: {{ formatCurrency(sale.amountPaid) }}, Owed: {{ formatCurrency((sale.originalTotal !== undefined ? sale.originalTotal : sale.total) - sale.amountPaid) }})</span>
                                 <span v-if="sale.paymentStatus === 'To Collect'">(Unpaid Balance Sent To Ledger)</span>
                             </div>
                             
@@ -1182,7 +1182,23 @@
                         toCollectLedger.value[acc].totalBalance += owed;
                     }
 
-                    sales.value.push({ id: Date.now(), dateStr: new Date().toLocaleDateString(), tableName: t.name, customerName: t.customerName, formattedTime: formatTime(t.elapsedSeconds), timeCost: rent, total: total, paymentStatus: checkoutPaymentType.value, amountPaid: paid, orders: [...t.orders], timestamp: new Date().toLocaleTimeString() });
+                    // Only push to sales if actual cash is paid (Full or Partial). Skip 'To Collect' completely.
+                    if (checkoutPaymentType.value !== 'To Collect') {
+                        sales.value.push({ 
+                            id: Date.now(), 
+                            dateStr: new Date().toLocaleDateString(), 
+                            tableName: t.name, 
+                            customerName: t.customerName, 
+                            formattedTime: formatTime(t.elapsedSeconds), 
+                            timeCost: rent, 
+                            total: paid, 
+                            originalTotal: total,
+                            paymentStatus: checkoutPaymentType.value, 
+                            amountPaid: paid, 
+                            orders: [...t.orders], 
+                            timestamp: new Date().toLocaleTimeString() 
+                        });
+                    }
                     
                     t.status = 'available'; t.orders = []; t.elapsedSeconds = 0; t.customerName = '';
                     managingTableId.value = null;
@@ -1235,7 +1251,23 @@
                         toCollectLedger.value[acc].totalBalance += owed;
                     }
 
-                    sales.value.push({ id: Date.now(), dateStr: new Date().toLocaleDateString(), tableName: 'BAR COUNTER', customerName: w.name, formattedTime: 'BAR COUNTER', timeCost: base, total: total, paymentStatus: checkoutPaymentType.value, amountPaid: paid, orders: [...w.orders], timestamp: new Date().toLocaleTimeString() });
+                    // Only push to sales if actual cash is paid (Full or Partial). Skip 'To Collect' completely.
+                    if (checkoutPaymentType.value !== 'To Collect') {
+                        sales.value.push({ 
+                            id: Date.now(), 
+                            dateStr: new Date().toLocaleDateString(), 
+                            tableName: 'BAR COUNTER', 
+                            customerName: w.name, 
+                            formattedTime: 'BAR COUNTER', 
+                            timeCost: base, 
+                            total: paid, 
+                            originalTotal: total,
+                            paymentStatus: checkoutPaymentType.value, 
+                            amountPaid: paid, 
+                            orders: [...w.orders], 
+                            timestamp: new Date().toLocaleTimeString() 
+                        });
+                    }
                     
                     walkInCustomers.value = walkInCustomers.value.filter(c => c.id !== id);
                     managingWalkInId.value = null;
@@ -1251,7 +1283,7 @@
 
                 const payBalanceFull = (name) => {
                     const p = toCollectLedger.value[name];
-                    sales.value.push({ id: Date.now(), dateStr: new Date().toLocaleDateString(), tableName: 'LEDGER RECOVERY', customerName: name, formattedTime: 'N/A', timeCost: 0, total: p.totalBalance, paymentStatus: 'Full', amountPaid: p.totalBalance, orders: [], timestamp: new Date().toLocaleTimeString() });
+                    sales.value.push({ id: Date.now(), dateStr: new Date().toLocaleDateString(), tableName: 'LEDGER RECOVERY', customerName: name, formattedTime: 'N/A', timeCost: 0, total: p.totalBalance, originalTotal: p.totalBalance, paymentStatus: 'Full', amountPaid: p.totalBalance, orders: [], timestamp: new Date().toLocaleTimeString() });
                     delete toCollectLedger.value[name];
                     delete collectPaymentsReceived.value[name];
                     saveSilent();
@@ -1260,7 +1292,7 @@
                     const amt = collectPayments.value[name];
                     if (!amt || amt <= 0 || amt > toCollectLedger.value[name].totalBalance) return;
                     toCollectLedger.value[name].totalBalance -= amt;
-                    sales.value.push({ id: Date.now(), dateStr: new Date().toLocaleDateString(), tableName: 'LEDGER PARTIAL', customerName: name, formattedTime: 'N/A', timeCost: 0, total: amt, paymentStatus: 'Full', amountPaid: amt, orders: [], timestamp: new Date().toLocaleTimeString() });
+                    sales.value.push({ id: Date.now(), dateStr: new Date().toLocaleDateString(), tableName: 'LEDGER PARTIAL', customerName: name, formattedTime: 'N/A', timeCost: 0, total: amt, originalTotal: amt, paymentStatus: 'Full', amountPaid: amt, orders: [], timestamp: new Date().toLocaleTimeString() });
                     collectPayments.value[name] = 0;
                     collectPaymentsReceived.value[name] = 0;
                     saveSilent();
